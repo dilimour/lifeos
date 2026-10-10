@@ -10,8 +10,8 @@
 Сертификат покрывает только эти два имени, поэтому поддоменов `matrix.` / `ntfy.` нет.
 
 ```
-Телефон (Element + ntfy) ─443─► MikroTik ─► nginx (хост) ─┬─► 127.0.0.1:8008 Synapse ─► Postgres (internal)
-                                                          └─► 127.0.0.1:8090 ntfy ◄── пуши от Synapse
+Телефон (Element + ntfy) ─443─► MikroTik ─► nginx (хост) ─┬─► 127.0.0.1:18008 Synapse ─► Postgres (internal)
+                                                          └─► 127.0.0.1:18090 ntfy ◄── пуши от Synapse
 ```
 
 Сервер `matrix` — `10.10.10.245` (статическая аренда на MikroTik), белый IP `185.35.192.13`.

@@ -28,8 +28,8 @@ for _ in $(seq 1 30); do
   [ "$st" = "healthy" ] && break; sleep 5
 done
 echo "Synapse: $st"
-curl -fsS http://127.0.0.1:8008/_matrix/client/versions >/dev/null && echo "Synapse отвечает на 127.0.0.1:8008"
-curl -fsS http://127.0.0.1:8090/v1/health && echo
+curl -fsS http://127.0.0.1:18008/_matrix/client/versions >/dev/null && echo "Synapse отвечает на 127.0.0.1:18008"
+curl -fsS http://127.0.0.1:18090/v1/health && echo
 
 # UnifiedPush: любой может писать в топики up*, читать — только авторизованные
 docker compose exec -T ntfy ntfy access everyone 'up*' write-only || true

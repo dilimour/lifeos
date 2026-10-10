@@ -27,7 +27,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8008:8008"
+      - "127.0.0.1:18008:8008"
     volumes:
       - ./data/synapse:/data
       - ./scripts:/scripts:ro
@@ -43,7 +43,7 @@ services:
     environment:
       NTFY_BASE_URL: https://${NTFY_HOST}
     ports:
-      - "127.0.0.1:8090:80"
+      - "127.0.0.1:18090:80"
     volumes:
       - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
       - ./data/ntfy/cache:/var/cache/ntfy
