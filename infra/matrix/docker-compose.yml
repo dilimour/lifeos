@@ -37,7 +37,7 @@ services:
     networks: [backend, frontend]
 
   ntfy:
-    image: binwiederhier/ntfy:latest   # после первого запуска закрепить версию
+    image: binwiederhier/ntfy:v2.29.0
     command: serve
     restart: unless-stopped
     environment:
