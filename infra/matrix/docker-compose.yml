@@ -1,0 +1,56 @@
+name: lifeos-matrix
+
+# Внешний вход — nginx на хосте (TLS, certbot). Контейнеры слушают только 127.0.0.1.
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задай в .env}
+      POSTGRES_DB: synapse
+      # Synapse требует локаль C
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse -d synapse"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  synapse:
+    image: matrixdotorg/synapse:v1.162.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8008:8008"
+    volumes:
+      - ./data/synapse:/data
+      - ./scripts:/scripts:ro
+    # пуши идут на ntfy через nginx этого же хоста (без hairpin NAT на роутере)
+    extra_hosts:
+      - "${NTFY_HOST}:host-gateway"
+    networks: [backend, frontend]
+
+  ntfy:
+    image: binwiederhier/ntfy:latest   # после первого запуска закрепить версию
+    command: serve
+    restart: unless-stopped
+    environment:
+      NTFY_BASE_URL: https://${NTFY_HOST}
+    ports:
+      - "127.0.0.1:8090:80"
+    volumes:
+      - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ./data/ntfy/cache:/var/cache/ntfy
+      - ./data/ntfy/lib:/var/lib/ntfy
+    networks: [frontend]
+
+networks:
+  backend:
+    internal: true   # postgres без доступа в интернет
+  frontend:

@@ -1,0 +1,9 @@
+[Unit]
+Description=LifeOS Matrix backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/lifeos/infra/matrix
+ExecStart=/opt/lifeos/infra/matrix/backup.sh

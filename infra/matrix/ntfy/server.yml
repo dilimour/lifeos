@@ -1,0 +1,8 @@
+# base-url задаётся переменной NTFY_BASE_URL в docker-compose
+listen-http: ":80"
+behind-proxy: true
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "24h"
+auth-file: "/var/lib/ntfy/user.db"
+# по умолчанию закрыто; топики UnifiedPush (up*) открываются на запись в setup.sh
+auth-default-access: "deny-all"
