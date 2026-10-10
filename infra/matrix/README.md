@@ -1,87 +1,99 @@
 # Этап 1 — Matrix: Synapse + Postgres + ntfy за nginx
 
-Приватный Matrix без федерации. Вход снаружи — существующий nginx на хосте (80/443), сертификат Let's Encrypt через certbot. Контейнеры слушают только `127.0.0.1`. Push на телефон без сервисов Google — собственный ntfy (UnifiedPush).
+Приватный Matrix без федерации. Вход снаружи — существующий nginx на хосте (80/443) с сертификатом GlobalSign DV из RU-CENTER. Контейнеры слушают только `127.0.0.1`. Push на телефон без сервисов Google — собственный ntfy (UnifiedPush).
+
+| Адрес | Что там |
+|---|---|
+| `https://dilimour.online` | Matrix (discovery + клиентский API), user ID `@john:dilimour.online` |
+| `https://www.dilimour.online` | ntfy (push-уведомления) |
+
+Сертификат покрывает только эти два имени, поэтому поддоменов `matrix.` / `ntfy.` нет.
 
 ```
 Телефон (Element + ntfy) ─443─► MikroTik ─► nginx (хост) ─┬─► 127.0.0.1:8008 Synapse ─► Postgres (internal)
                                                           └─► 127.0.0.1:8090 ntfy ◄── пуши от Synapse
 ```
 
-Данные:
-- сервер `matrix` — `10.10.10.245` (enp5s0), белый IP `185.35.192.13` (статический);
-- системный SSD — `sdb` (LVM, `/`), HDD 1 ТБ — `sda1` (NTFS, не смонтирован).
+Сервер `matrix` — `10.10.10.245` (статическая аренда на MikroTik), белый IP `185.35.192.13`.
 
 ## 1. DNS (RU-CENTER)
 | Имя | Тип | Значение |
 |---|---|---|
 | `@` | A | 185.35.192.13 |
-| `matrix` | A | 185.35.192.13 |
-| `ntfy` | A | 185.35.192.13 |
+| `www` | A | 185.35.192.13 |
 
 ```bash
-for h in dilimour.online matrix.dilimour.online ntfy.dilimour.online; do echo "$h $(dig +short $h @1.1.1.1)"; done
+for h in dilimour.online www.dilimour.online; do echo "$h $(dig +short $h @1.1.1.1)"; done
 ```
 
 ## 2. MikroTik
 ```
-# закрепить адрес сервера (сейчас он выдан DHCP динамически)
-/ip dhcp-server lease make-static [find address=10.10.10.245]
-# проверить, нет ли уже проброса 80/443
-/ip firewall nat print where chain=dstnat
-# проброс (если ещё нет)
+/ip firewall nat print where chain=dstnat          # проверить, нет ли уже проброса 80/443
 /ip firewall nat add chain=dstnat in-interface-list=WAN protocol=tcp dst-port=80,443 action=dst-nat to-addresses=10.10.10.245 comment="lifeos nginx"
-# из дома — напрямую на сервер, без выхода наружу
+# из дома — напрямую на сервер
 /ip dns static add name=dilimour.online address=10.10.10.245
-/ip dns static add name=matrix.dilimour.online address=10.10.10.245
-/ip dns static add name=ntfy.dilimour.online address=10.10.10.245
+/ip dns static add name=www.dilimour.online address=10.10.10.245
 ```
 
-## 3. Код на сервер
+## 3. HDD 1 ТБ → ext4, `/mnt/hdd`
+Диск пустой, форматируем. **Сначала убедись, что `sda` — это WD на 1 ТБ (ROTA=1), а не системный SSD.**
+```bash
+lsblk -o NAME,SIZE,MODEL,ROTA,FSTYPE,MOUNTPOINTS
+sudo wipefs -a /dev/sda
+sudo parted -s /dev/sda mklabel gpt mkpart data ext4 0% 100%
+sudo mkfs.ext4 -L hdd -m 1 /dev/sda1
+sudo mkdir -p /mnt/hdd
+echo 'LABEL=hdd /mnt/hdd ext4 defaults,noatime,nofail 0 2' | sudo tee -a /etc/fstab
+sudo systemctl daemon-reload && sudo mount -a && df -h /mnt/hdd
+sudo mkdir -p /mnt/hdd/backups /mnt/hdd/data
+```
+
+## 4. Сертификат
+Из RU-CENTER скачать сертификат, промежуточный сертификат GlobalSign и закрытый ключ.
+```bash
+sudo mkdir -p /etc/ssl/dilimour && sudo chmod 700 /etc/ssl/dilimour
+# сертификат + промежуточный — в один файл, именно в таком порядке
+cat www.dilimour.online.crt globalsign-intermediate.crt | sudo tee /etc/ssl/dilimour/fullchain.pem >/dev/null
+sudo cp www.dilimour.online.key /etc/ssl/dilimour/privkey.pem && sudo chmod 600 /etc/ssl/dilimour/privkey.pem
+# проверки: какие имена покрыты, срок, совпадает ли ключ
+openssl x509 -in /etc/ssl/dilimour/fullchain.pem -noout -subject -enddate -ext subjectAltName
+diff <(openssl x509 -in /etc/ssl/dilimour/fullchain.pem -noout -pubkey) <(sudo openssl pkey -in /etc/ssl/dilimour/privkey.pem -pubout) && echo "ключ подходит"
+```
+В `subjectAltName` должны быть оба имени: `dilimour.online` и `www.dilimour.online`.
+
+## 5. Код и nginx
 ```bash
 sudo git clone git@github.com:dilimour/lifeos.git /opt/lifeos   # deploy key
-cd /opt/lifeos/infra/matrix
-cp .env.example .env
-```
-
-## 4. Сертификат и nginx
-```bash
-sudo apt install -y certbot
-sudo mkdir -p /var/www/certbot
-sudo ln -s /opt/lifeos/infra/matrix/nginx/lifeos-http.conf /etc/nginx/sites-enabled/lifeos-http.conf
-sudo nginx -t && sudo systemctl reload nginx
-sudo certbot certonly --webroot -w /var/www/certbot \
-  -d dilimour.online -d matrix.dilimour.online -d ntfy.dilimour.online \
-  --deploy-hook "systemctl reload nginx"
-sudo ln -s /opt/lifeos/infra/matrix/nginx/lifeos-https.conf /etc/nginx/sites-enabled/lifeos-https.conf
+sudo ln -s /opt/lifeos/infra/matrix/nginx/lifeos-http.conf  /etc/nginx/sites-enabled/
+sudo ln -s /opt/lifeos/infra/matrix/nginx/lifeos-https.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
-Если `nginx -t` ругается на `default_server` или пересечение имён — пришли вывод, поправим. Существующие сайты nginx не трогаем.
+Если `nginx -t` ругается на пересечение имён с существующими сайтами — пришли вывод.
 
-## 5. Запуск
+## 6. Запуск
 ```bash
-cd /opt/lifeos/infra/matrix && sudo ./setup.sh
+cd /opt/lifeos/infra/matrix && sudo cp .env.example .env && sudo ./setup.sh
 sudo docker compose exec synapse register_new_matrix_user -c /data/homeserver.yaml -u john -a http://localhost:8008
 sudo docker compose exec ntfy ntfy user add --role=admin john
-# проверка снаружи (с телефона без Wi-Fi или curl с внешнего хоста)
-curl -s https://dilimour.online/.well-known/matrix/client
-curl -s https://matrix.dilimour.online/_matrix/client/versions | head -c 120; echo
-curl -s https://ntfy.dilimour.online/v1/health
+# проверка
+curl -s https://dilimour.online/.well-known/matrix/client; echo
+curl -s https://dilimour.online/_matrix/client/versions | head -c 120; echo
+curl -s https://www.dilimour.online/v1/health; echo
 ```
 Если включён ufw: `sudo ufw allow from 172.16.0.0/12 to any port 443 proto tcp` — чтобы Synapse из контейнера достучался до ntfy через nginx.
 
-## 6. Бэкапы
-HDD `sda1` сейчас NTFS и не смонтирован — сначала решаем, форматировать в ext4 или монтировать как есть (см. основной чат). Потом:
+## 7. Бэкапы
 ```bash
 sudo cp systemd/lifeos-matrix-backup.* /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now lifeos-matrix-backup.timer
 sudo systemctl start lifeos-matrix-backup.service && journalctl -u lifeos-matrix-backup -n 5
 ```
 
-## 7. Телефон (Huawei без Google)
-1. **ntfy** (F-Droid или APK с GitHub) → Настройки → сервер по умолчанию `https://ntfy.dilimour.online`, пользователь `john`.
+## 8. Телефон (Huawei без Google)
+1. **ntfy** (F-Droid или APK с GitHub) → Настройки → сервер по умолчанию `https://www.dilimour.online`, пользователь `john`.
 2. **Element** из F-Droid (сборка с UnifiedPush) → сервер `dilimour.online`, логин `john`.
 3. Element → Настройки → Уведомления → способ доставки: ntfy.
 4. Проверка: написать себе с ПК (Element Desktop) — уведомление должно прийти на телефон.
 
-## 8. Дальше
-Этап 2: бот-оркестратор создаёт Space «Моя жизнь» с комнатами Сводки · Финансы · Здоровье · Спорт · Работа · Обучение · Досуг.
+## Продление сертификата
+GlobalSign DV действует до **27.04.2027**. Продлить в RU-CENTER заранее, заменить два файла в `/etc/ssl/dilimour/`, `sudo systemctl reload nginx`. Бот будет напоминать за 30 дней.
