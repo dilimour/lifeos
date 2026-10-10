@@ -16,7 +16,9 @@
 
 Сервер `matrix` — `10.10.10.245` (статическая аренда на MikroTik), белый IP `185.35.192.13`.
 
-## 1. DNS (RU-CENTER)
+## 1. DNS
+В RU-CENTER редактирование записей платное (DNS-master), поэтому зона вынесена на бесплатный DNS-хостинг (Selectel): в RU-CENTER → «Указать DNS-серверы самостоятельно» → NS-серверы провайдера.
+
 | Имя | Тип | Значение |
 |---|---|---|
 | `@` | A | 185.35.192.13 |
@@ -41,6 +43,7 @@ for h in dilimour.online www.dilimour.online; do echo "$h $(dig +short $h @1.1.1
 lsblk -o NAME,SIZE,MODEL,ROTA,FSTYPE,MOUNTPOINTS
 sudo wipefs -a /dev/sda
 sudo parted -s /dev/sda mklabel gpt mkpart data ext4 0% 100%
+sudo partprobe /dev/sda && sudo udevadm settle   # дождаться появления /dev/sda1
 sudo mkfs.ext4 -L hdd -m 1 /dev/sda1
 sudo mkdir -p /mnt/hdd
 echo 'LABEL=hdd /mnt/hdd ext4 defaults,noatime,nofail 0 2' | sudo tee -a /etc/fstab
@@ -49,12 +52,13 @@ sudo mkdir -p /mnt/hdd/backups /mnt/hdd/data
 ```
 
 ## 4. Сертификат
-Из RU-CENTER скачать сертификат, промежуточный сертификат GlobalSign и закрытый ключ.
+Из RU-CENTER: сертификат, промежуточный сертификат GlobalSign и **закрытый ключ** (корневой не нужен).
 ```bash
-sudo mkdir -p /etc/ssl/dilimour && sudo chmod 700 /etc/ssl/dilimour
+cd /etc/ssl/dilimour && sudo chmod 700 .
 # сертификат + промежуточный — в один файл, именно в таком порядке
-cat www.dilimour.online.crt globalsign-intermediate.crt | sudo tee /etc/ssl/dilimour/fullchain.pem >/dev/null
-sudo cp www.dilimour.online.key /etc/ssl/dilimour/privkey.pem && sudo chmod 600 /etc/ssl/dilimour/privkey.pem
+cat www_dilimour_online_2027_04_27.crt intermediate_pem_globalsign_ssl_dv_free_1.crt | sudo tee fullchain.pem >/dev/null
+# ключ сохранить как privkey.pem
+sudo chmod 600 privkey.pem
 # проверки: какие имена покрыты, срок, совпадает ли ключ
 openssl x509 -in /etc/ssl/dilimour/fullchain.pem -noout -subject -enddate -ext subjectAltName
 diff <(openssl x509 -in /etc/ssl/dilimour/fullchain.pem -noout -pubkey) <(sudo openssl pkey -in /etc/ssl/dilimour/privkey.pem -pubout) && echo "ключ подходит"
