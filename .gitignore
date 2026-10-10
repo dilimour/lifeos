@@ -3,3 +3,6 @@ private/
 *.pdf
 .env
 infra/**/data/
+bot/local/
+__pycache__/
+.pytest_cache/

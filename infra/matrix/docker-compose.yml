@@ -50,6 +50,26 @@ services:
       - ./data/ntfy/lib:/var/lib/ntfy
     networks: [frontend]
 
+  # LifeOS-бот. Включается строкой COMPOSE_PROFILES=bot в .env (её добавляет bot-setup.sh)
+  bot:
+    profiles: [bot]
+    build: ../../bot
+    restart: unless-stopped
+    depends_on:
+      synapse:
+        condition: service_healthy
+    environment:
+      LIFEOS_HOMESERVER: http://synapse:8008
+      LIFEOS_BOT_USER: "@lifeos:${SERVER_NAME}"
+      LIFEOS_BOT_PASSWORD: ${LIFEOS_BOT_PASSWORD:-}
+      LIFEOS_OWNER: "@john:${SERVER_NAME}"
+      LIFEOS_DATABASE_URL: postgresql://lifeos:${LIFEOS_DB_PASSWORD:-}@postgres:5432/lifeos
+      LIFEOS_OWN_PHONE: ${LIFEOS_OWN_PHONE:-}
+    volumes:
+      - ./data/bot:/data
+      - ../../bot/local:/config:ro
+    networks: [backend]   # только synapse и postgres, без интернета
+
 networks:
   backend:
     internal: true   # postgres без доступа в интернет

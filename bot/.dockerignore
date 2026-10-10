@@ -1,0 +1,4 @@
+local/
+tests/
+__pycache__/
+*.pyc
